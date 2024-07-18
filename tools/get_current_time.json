@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_current_time",
+    "description": "Get the current time",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "tz": {
+          "type": "string",
+          "description": "The desired time zone (e.g. \"America/Los_Angeles\"), or UTC (the default)"
+        }
+      },
+      "required": []
+    }
+  }
+}
