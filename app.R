@@ -10,13 +10,13 @@ library(plotly)
 library(ggplot2)
 library(ggridges)
 library(dplyr)
+library(promises)
+library(mirai)
 
-# Prepare the duckdb database
-conn <- dbConnect(duckdb(), dbdir = ":memory:")
+# Open the duckdb database
+conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
 # Close the database when the app stops
 onStop(\() dbDisconnect(conn))
-# Load tips.csv into a table named `tips`
-duckdb_read_csv(conn, "tips", here("tips.csv"))
 
 # Dynamically create the system prompt, based on the real data. For an actually
 # large database, you wouldn't want to retrieve all the data like this, but
@@ -259,13 +259,55 @@ server <- function(input, output, session) {
       list(role = "user", content = input$chat_user_input)
     )
 
-    completion <- tryCatch(
+    prog <- Progress$new()
+    prog$set(value = NULL, message = "Thinking...")
+
+    mirai(
+      msgs = messages$as_list(),
       {
-        withProgress(value = NULL, message = "Thinking...", {
-          query(messages$as_list(), .ctx = ctx)
-        })
-      },
-      error = \(err) {
+        library(duckdb)
+        library(DBI)
+        library(here)
+        source(here("R/query.R"), local = TRUE)
+
+        conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
+        on.exit(dbDisconnect(conn))
+
+        ctx = list(conn = conn)
+
+        query(msgs, .ctx = ctx)
+      }
+    ) |>
+
+      then(\(completion) {
+        response_msg <- completion$choices[[1]]$message
+        # print(response_msg)
+
+        # We have a response! It's in JSON.
+        msg_parsed <- jsonlite::fromJSON(response_msg$content, simplifyDataFrame = FALSE)
+
+        # Add response to the chat history
+        messages$add(response_msg)
+
+        if ("sql" %in% names(msg_parsed)) {
+          current_query(msg_parsed$sql)
+        }
+
+        if ("title" %in% names(msg_parsed)) {
+          current_title(msg_parsed$title)
+        }
+
+        if ("response" %in% names(msg_parsed)) {
+          # Show response in the UI
+          chat_append_message("chat", list(
+            role = "assistant",
+            content = msg_parsed$response
+          ))
+        }
+
+      }) |>
+
+      catch(\(err) {
         err_msg <- list(
           role = "assistant",
           # TODO: Make sure error doesn't contain HTML
@@ -273,39 +315,12 @@ server <- function(input, output, session) {
         )
         messages$add(err_msg)
         chat_append_message("chat", err_msg)
-        NULL
-      }
-    )
+        stop(err)
+      }) |>
 
-    if (is.null(completion)) {
-      # An error must've occurred
-      return()
-    }
-
-    response_msg <- completion$choices[[1]]$message
-    # print(response_msg)
-
-    # We have a response! It's in JSON.
-    msg_parsed <- jsonlite::fromJSON(response_msg$content, simplifyDataFrame = FALSE)
-
-    # Add response to the chat history
-    messages$add(response_msg)
-
-    if ("sql" %in% names(msg_parsed)) {
-      current_query(msg_parsed$sql)
-    }
-
-    if ("title" %in% names(msg_parsed)) {
-      current_title(msg_parsed$title)
-    }
-
-    if ("response" %in% names(msg_parsed)) {
-      # Show response in the UI
-      chat_append_message("chat", list(
-        role = "assistant",
-        content = msg_parsed$response
-      ))
-    }
+      finally(\() {
+        prog$close()
+      })
   })
 }
 
