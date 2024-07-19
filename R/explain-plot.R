@@ -1,5 +1,7 @@
 library(ggplot2)
 library(base64enc)
+library(promises)
+library(mirai)
 
 #' Convert a plot object to a PNG data URI
 #'
@@ -54,17 +56,31 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
     )
   )
 
-  # From query.R
-  response <- query(c(messages, list(new_message)), .ctx = .ctx)
+  mirai(
+    msgs = c(messages, list(new_message)),
+    {
+      library(duckdb)
+      library(DBI)
+      library(here)
+      source(here("R/query.R"), local = TRUE)
 
-  response_md <- jsonlite::fromJSON(response$choices[[1]]$message$content)$response
+      conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
+      on.exit(dbDisconnect(conn))
 
-  showModal(modalDialog(
-    tags$img(src = img_url, style = "max-width: min(100%, 400px);", class = "d-block border mx-auto mb-3"),
-    tags$div(style = "max-height: 300px; overflow-y: auto;",
-      markdown(response_md)
-    ),
-    size = "l"
-  ))
+      ctx = list(conn = conn)
 
+      query(msgs, .ctx = ctx)
+    }
+  ) |>
+
+    then(\(completion) {
+      response_md <- jsonlite::fromJSON(completion$choices[[1]]$message$content)$response
+      showModal(modalDialog(
+        tags$img(src = img_url, style = "max-width: min(100%, 400px);", class = "d-block border mx-auto mb-3"),
+        tags$div(style = "max-height: 300px; overflow-y: auto;",
+          markdown(response_md)
+        ),
+        size = "l"
+      ))
+    })
 }
