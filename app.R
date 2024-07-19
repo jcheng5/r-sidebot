@@ -30,6 +30,8 @@ ui <- page_sidebar(
     style = "height: 100%;",
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
+  textOutput("title", container = h3),
+  verbatimTextOutput("sql"),
   layout_columns(fill = FALSE,
     value_box(
       showcase = icon_user,
@@ -103,6 +105,14 @@ server <- function(input, output, session) {
       sql <- "SELECT * FROM tips;"
     }
     dbGetQuery(conn, sql)
+  })
+
+  output$title <- renderText({
+    current_title()
+  })
+
+  output$sql <- renderText({
+    current_query()
   })
 
   output$total_tippers <- renderText({
@@ -208,6 +218,9 @@ server <- function(input, output, session) {
 
     if (!is.null(msg_parsed$sql) && msg_parsed$sql != "") {
       current_query(msg_parsed$sql)
+    }
+    if ("title" %in% names(msg_parsed)) {
+      current_title(msg_parsed$title)
     }
 
     # Show response in the UI
