@@ -11,10 +11,6 @@ library(ggplot2)
 library(ggridges)
 library(dplyr)
 
-source(here("chat.R"), local = TRUE)
-source(here("query.R"), local = TRUE)
-source(here("explain-plot.R"), local = TRUE)
-
 # Prepare the duckdb database
 conn <- dbConnect(duckdb(), dbdir = ":memory:")
 # Close the database when the app stops
@@ -118,6 +114,8 @@ server <- function(input, output, session) {
   # case, the database connection that query() needs.
   ctx <- list(conn = conn)
 
+  # The reactive data frame. Either returns the entire dataset, or filtered by
+  # whatever Sidebot decided.
   tips_data <- reactive({
     sql <- current_query()
     if (is.null(sql) || sql == "") {
@@ -126,6 +124,10 @@ server <- function(input, output, session) {
     dbGetQuery(conn, sql)
   })
 
+
+
+  # Header outputs ----------------------------------------------------------
+
   output$title <- renderText({
     current_title()
   })
@@ -133,6 +135,10 @@ server <- function(input, output, session) {
   output$sql <- renderText({
     current_query()
   })
+
+
+
+  # 🎯 Value box outputs -----------------------------------------------------
 
   output$total_tippers <- renderText({
     nrow(tips_data())
@@ -148,13 +154,23 @@ server <- function(input, output, session) {
     paste0("$", formatC(x, format="f", digits=2, big.mark=","))
   })
 
+
+
+  # 🔍 Data table ------------------------------------------------------------
+
   output$table <- renderReactable({
     reactable(tips_data(),
       pagination = FALSE, bordered = TRUE
     )
   })
 
+
+
+  # 📊 Scatter plot ----------------------------------------------------------
+
   scatterplot <- reactive({
+    req(nrow(tips_data()) > 0)
+
     color <- input$scatter_color
 
     data <- tips_data()
@@ -183,7 +199,13 @@ server <- function(input, output, session) {
     explain_plot(messages$as_list(), scatterplot(), .ctx = ctx)
   })
 
+
+
+  # 📊 Ridge plot ------------------------------------------------------------
+
   tip_perc <- reactive({
+    req(nrow(tips_data()) > 0)
+
     df <- tips_data() |> mutate(percent = tip / total_bill)
 
     ggplot(df, aes_string(x = "percent", y = input$tip_perc_y, fill = input$tip_perc_y)) +
@@ -202,15 +224,31 @@ server <- function(input, output, session) {
     explain_plot(messages$as_list(), tip_perc(), .ctx = ctx)
   })
 
-  # We could've just used a list here, but fastqueue has
-  # a nicer looking API for adding new elements
+
+
+  # ✨ Sidebot ✨ -------------------------------------------------------------
+
+  # The entire chat history up to this point, from the assistant's point of view
+  # (not the user). We'll add new messages whenever the user asks a new question
+  # or the chat model returns a new response.
+  #
+  # (We could've just used a list here, but fastqueue has a nicer looking API
+  # for adding new elements.)
   messages <- fastqueue()
+
+  # Preload the conversation with the system prompt. These are instructions for
+  # the chat model, and must not be shown to the end user.
   messages$add(system_prompt_msg)
+
+  # Prepopulate the chat UI with a welcome message that appears to be from the
+  # chat model (but is actually hard-coded). This is just for the user, not for
+  # the chat model to see.
   chat_append_message("chat", list(
     role = "assistant",
     content = greeting
   ))
 
+  # Handle user input
   observeEvent(input$chat_user_input, {
     # Add user message to the chat history
     messages$add(
@@ -242,23 +280,28 @@ server <- function(input, output, session) {
 
     response_msg <- completion$choices[[1]]$message
     # print(response_msg)
+
+    # We have a response! It's in JSON.
     msg_parsed <- jsonlite::fromJSON(response_msg$content, simplifyDataFrame = FALSE)
 
     # Add response to the chat history
     messages$add(response_msg)
 
-    if (!is.null(msg_parsed$sql) && msg_parsed$sql != "") {
+    if ("sql" %in% names(msg_parsed)) {
       current_query(msg_parsed$sql)
     }
+
     if ("title" %in% names(msg_parsed)) {
       current_title(msg_parsed$title)
     }
 
-    # Show response in the UI
-    chat_append_message("chat", list(
-      role = "assistant",
-      content = msg_parsed$response
-    ))
+    if ("response" %in% names(msg_parsed)) {
+      # Show response in the UI
+      chat_append_message("chat", list(
+        role = "assistant",
+        content = msg_parsed$response
+      ))
+    }
   })
 }
 

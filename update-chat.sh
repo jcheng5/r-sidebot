@@ -2,6 +2,9 @@
 
 set -e
 
+# This script downloads new chat CSS/JS assets from py-shiny, and stamps the
+# directory with a GIT_VERSION.
+
 REPO_URL="https://github.com/posit-dev/py-shiny.git"
 DIRECTORY="shiny/www/py-shiny/chat"
 
