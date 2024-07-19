@@ -106,6 +106,10 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output, session) {
+
+
+  # 🔄 Reactive state/computation --------------------------------------------
+
   current_title <- reactiveVal(NULL)
   current_query <- reactiveVal("")
 
@@ -126,7 +130,7 @@ server <- function(input, output, session) {
 
 
 
-  # Header outputs ----------------------------------------------------------
+  # 🏷️ Header outputs --------------------------------------------------------
 
   output$title <- renderText({
     current_title()
