@@ -11,40 +11,54 @@ library(ggplot2)
 library(ggridges)
 library(dplyr)
 
-icon_user <- fa("user")
-icon_wallet <- fa("wallet")
-icon_dollar_sign <- fa("dollar-sign")
-icon_ellipsis <- fa("ellipsis")
-icon_robot <- fa("robot")
-
-conn <- dbConnect(duckdb(), dbdir = ":memory:")
-onStop(\() dbDisconnect(conn))
-duckdb_read_csv(conn, "tips", here("tips.csv"))
-
 source(here("chat.R"), local = TRUE)
 source(here("query.R"), local = TRUE)
+source(here("explain-plot.R"), local = TRUE)
+
+# Prepare the duckdb database
+conn <- dbConnect(duckdb(), dbdir = ":memory:")
+# Close the database when the app stops
+onStop(\() dbDisconnect(conn))
+# Load tips.csv into a table named `tips`
+duckdb_read_csv(conn, "tips", here("tips.csv"))
+
+# Dynamically create the system prompt, based on the real data. For an actually
+# large database, you wouldn't want to retrieve all the data like this, but
+# instead either hand-write the schema or write your own routine that is more
+# efficient than system_prompt().
+#
+# This value has the shape list(role = "system", content = "<SYSTEM_PROMPT>")
+system_prompt_msg <- system_prompt(dbGetQuery(conn, "SELECT * FROM tips"), "tips")
+
+# This is the greeting that should initially appear in the sidebar when the app
+# loads.
+greeting <- paste(readLines(here("greeting.md")), collapse = "\n")
 
 ui <- page_sidebar(
+  style = "background-color: rgb(248, 248, 248);",
   title = "Restaurant tipping",
   sidebar = sidebar(
+    width = 400,
     style = "height: 100%;",
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
+  useBusyIndicators(),
   textOutput("title", container = h3),
-  verbatimTextOutput("sql"),
+  verbatimTextOutput("sql") |>
+    tagAppendAttributes(style = "max-height: 100px; overflow: auto;"),
   layout_columns(fill = FALSE,
     value_box(
-      showcase = icon_user,
+      showcase = fa_i("user"),
       "Total tippers",
       textOutput("total_tippers", inline = TRUE)
     ),
     value_box(
-      showcase = icon_wallet,
+      showcase = fa_i("wallet"),
       "Average tips",
       textOutput("average_tip", inline = TRUE)
     ),
     value_box(
-      showcase = icon_dollar_sign,
+      showcase = fa_i("dollar-sign"),
       "Average bill",
       textOutput("average_bill", inline = TRUE)
     ),
@@ -59,9 +73,9 @@ ui <- page_sidebar(
       card_header(class = "d-flex justify-content-between align-items-center",
         "Total bill vs tip",
         span(
-          actionLink("interpret_scatter", icon_robot, class = "me-3"),
+          actionLink("interpret_scatter", fa_i("robot"), class = "me-3"),
           popover(title = "Add a color variable", placement = "top",
-            icon_ellipsis,
+            fa_i("ellipsis"),
             radioButtons(
               "scatter_color",
               NULL,
@@ -77,9 +91,9 @@ ui <- page_sidebar(
       card_header(class = "d-flex justify-content-between align-items-center",
         "Tip percentages",
         span(
-          actionLink("interpret_ridge", icon_robot, class = "me-3"),
+          actionLink("interpret_ridge", fa_i("robot"), class = "me-3"),
           popover(title = "Split ridgeplot", placement = "top",
-            icon_ellipsis,
+            fa_i("ellipsis"),
             radioButtons(
               "tip_perc_y",
               "Split by",
@@ -98,6 +112,11 @@ ui <- page_sidebar(
 server <- function(input, output, session) {
   current_title <- reactiveVal(NULL)
   current_query <- reactiveVal("")
+
+  # This object must always be passed as the `.ctx` argument to query(), so that
+  # tool functions can access the context they need to do their jobs; in this
+  # case, the database connection that query() needs.
+  ctx <- list(conn = conn)
 
   tips_data <- reactive({
     sql <- current_query()
@@ -160,6 +179,10 @@ server <- function(input, output, session) {
     scatterplot()
   })
 
+  observeEvent(input$interpret_scatter, {
+    explain_plot(messages$as_list(), scatterplot(), .ctx = ctx)
+  })
+
   tip_perc <- reactive({
     df <- tips_data() |> mutate(percent = tip / total_bill)
 
@@ -175,10 +198,18 @@ server <- function(input, output, session) {
     tip_perc()
   })
 
+  observeEvent(input$interpret_ridge, {
+    explain_plot(messages$as_list(), tip_perc(), .ctx = ctx)
+  })
+
   # We could've just used a list here, but fastqueue has
   # a nicer looking API for adding new elements
   messages <- fastqueue()
-  messages$add(system_prompt(dbGetQuery(conn, "SELECT * FROM tips"), "tips"))
+  messages$add(system_prompt_msg)
+  chat_append_message("chat", list(
+    role = "assistant",
+    content = greeting
+  ))
 
   observeEvent(input$chat_user_input, {
     # Add user message to the chat history
@@ -189,7 +220,7 @@ server <- function(input, output, session) {
     completion <- tryCatch(
       {
         withProgress(value = NULL, message = "Thinking...", {
-          query(messages$as_list(), .ctx = list(conn = conn))
+          query(messages$as_list(), .ctx = ctx)
         })
       },
       error = \(err) {

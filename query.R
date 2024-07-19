@@ -67,7 +67,7 @@ query <- function(messages, model = "gpt-4o", ..., .ctx = NULL) {
   # TODO: verify it's a good response
 
   while (TRUE) {
-    print(tail(messages, 1))
+    # print(tail(messages, 1))
     completion <- client$chat$completions$create(
       model = model,
       messages = messages,
@@ -109,7 +109,7 @@ query <- function(messages, model = "gpt-4o", ..., .ctx = NULL) {
       break
     }
   }
-  print(completion$choices[[1]])
+  # print(completion$choices[[1]])
   completion
 }
 
