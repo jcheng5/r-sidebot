@@ -8,6 +8,11 @@ set -e
 REPO_URL="https://github.com/posit-dev/py-shiny.git"
 DIRECTORY="shiny/www/py-shiny/chat"
 
+if [ ! -f "sidebot-r.Rproj" ]; then
+  echo "Error: You must execute this script from the repo root (./scripts/update-chat.sh)."
+  exit 1
+fi
+
 # Clone the repository with sparse-checkout enabled
 git clone --depth 1 "$REPO_URL" repo_tmp
 

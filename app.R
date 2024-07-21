@@ -39,8 +39,9 @@ ui <- page_sidebar(
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
   useBusyIndicators(),
-  textOutput("title", container = h3),
-  verbatimTextOutput("sql") |>
+  includeCSS(here("styles.css")),
+  textOutput("show_title", container = h3),
+  verbatimTextOutput("show_query") |>
     tagAppendAttributes(style = "max-height: 100px; overflow: auto;"),
   layout_columns(fill = FALSE,
     value_box(
@@ -132,11 +133,11 @@ server <- function(input, output, session) {
 
   # 🏷️ Header outputs --------------------------------------------------------
 
-  output$title <- renderText({
+  output$show_title <- renderText({
     current_title()
   })
 
-  output$sql <- renderText({
+  output$show_query <- renderText({
     current_query()
   })
 

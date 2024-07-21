@@ -1,3 +1,4 @@
+# pak::pak("irudnyts/openai@r6")
 library(openai)
 library(here)
 
@@ -62,8 +63,7 @@ df_to_schema <- function(df, name, categorical_threshold) {
   return(paste(schema, collapse = "\n"))
 }
 
-query <- function(messages, model = "gpt-4o", ..., .ctx = NULL) {
-  # TODO: Add tool call support
+query <- function(messages, model = "gpt-4o-mini", ..., .ctx = NULL) {
   # TODO: verify it's a good response
 
   while (TRUE) {
