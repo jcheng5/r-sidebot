@@ -33,16 +33,20 @@ greeting <- paste(readLines(here("greeting.md")), collapse = "\n")
 ui <- page_sidebar(
   style = "background-color: rgb(248, 248, 248);",
   title = "Restaurant tipping",
+  useBusyIndicators(),
+  includeCSS(here("styles.css")),
+  
   sidebar = sidebar(
     width = 400,
     style = "height: 100%;",
+    
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
-  useBusyIndicators(),
-  includeCSS(here("styles.css")),
+  
   textOutput("show_title", container = h3),
   verbatimTextOutput("show_query") |>
     tagAppendAttributes(style = "max-height: 100px; overflow: auto;"),
+
   layout_columns(fill = FALSE,
     value_box(
       showcase = fa_i("user"),
@@ -60,9 +64,13 @@ ui <- page_sidebar(
       textOutput("average_bill", inline = TRUE)
     ),
   ),
+
   layout_columns(
+    style = "min-height: 450px;",
+
     col_widths = c(6, 6, 12),
     card(
+      style = "height: 500px;",
       card_header("Tips data"),
       reactableOutput("table", height = "100%")
     ),

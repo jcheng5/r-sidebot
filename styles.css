@@ -24,11 +24,12 @@
     /* Prevent empty title/query blocks from taking any space */
     border: 0;
     padding: 0;
-    margin: 0;
+    margin-bottom: 0;
   }
   
   #show_title:empty, #show_query {
     /* We can't affect the flex parent's gap, so instead we use a negative margin
-       to counteract it */
-       margin-top: calc(-1 * var(--bslib-mb-spacer));
+       to counteract it. In the case of #show_query, we don't even want the gap
+       even when it's showing, as it results in too much space between the two. */
+    margin-top: calc(-1 * var(--bslib-mb-spacer));
   }
