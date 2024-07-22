@@ -8,7 +8,7 @@ set -e
 REPO_URL="https://github.com/posit-dev/py-shiny.git"
 DIRECTORY="shiny/www/py-shiny/chat"
 
-if [ ! -f "sidebot-r.Rproj" ]; then
+if [ ! -f "r-sidebot.Rproj" ]; then
   echo "Error: You must execute this script from the repo root (./scripts/update-chat.sh)."
   exit 1
 fi
