@@ -76,11 +76,24 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
     then(\(completion) {
       response_md <- jsonlite::fromJSON(completion$choices[[1]]$message$content)$response
       showModal(modalDialog(
-        tags$img(src = img_url, style = "max-width: min(100%, 400px);", class = "d-block border mx-auto mb-3"),
-        tags$div(style = "max-height: 300px; overflow-y: auto;",
+        tags$button(
+          type="button",
+          class="btn-close d-block ms-auto mb-3",
+          data_bs_dismiss="modal",
+          aria_label="Close",
+        ),
+        tags$img(
+          src = img_url,
+          style = "max-width: min(100%, 400px);",
+          class = "d-block border mx-auto mb-3"
+        ),
+        tags$div(style = "overflow-y: auto;",
           markdown(response_md)
         ),
-        size = "l"
-      ))
+        size = "l",
+        easyClose = TRUE,
+        title = NULL,
+        footer = NULL,
+      ) |> tagAppendAttributes(style = "--bs-modal-margin: 1.75rem;"))
     })
 }

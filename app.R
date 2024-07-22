@@ -30,24 +30,23 @@ system_prompt_msg <- system_prompt(dbGetQuery(conn, "SELECT * FROM tips"), "tips
 # loads.
 greeting <- paste(readLines(here("greeting.md")), collapse = "\n")
 
+icon_explain <- tags$img(src = "stars.svg")
+
 ui <- page_sidebar(
   style = "background-color: rgb(248, 248, 248);",
   title = "Restaurant tipping",
   useBusyIndicators(),
   includeCSS(here("styles.css")),
-  
   sidebar = sidebar(
     width = 400,
     style = "height: 100%;",
-    
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
-  
   textOutput("show_title", container = h3),
   verbatimTextOutput("show_query") |>
     tagAppendAttributes(style = "max-height: 100px; overflow: auto;"),
-
-  layout_columns(fill = FALSE,
+  layout_columns(
+    fill = FALSE,
     value_box(
       showcase = fa_i("user"),
       "Total tippers",
@@ -64,10 +63,8 @@ ui <- page_sidebar(
       textOutput("average_bill", inline = TRUE)
     ),
   ),
-
   layout_columns(
     style = "min-height: 450px;",
-
     col_widths = c(6, 6, 12),
     card(
       style = "height: 500px;",
@@ -75,11 +72,18 @@ ui <- page_sidebar(
       reactableOutput("table", height = "100%")
     ),
     card(
-      card_header(class = "d-flex justify-content-between align-items-center",
+      card_header(
+        class = "d-flex justify-content-between align-items-center",
         "Total bill vs tip",
         span(
-          actionLink("interpret_scatter", fa_i("robot"), class = "me-3"),
-          popover(title = "Add a color variable", placement = "top",
+          actionLink(
+            "interpret_scatter",
+            icon_explain,
+            class = "me-3 text-decoration-none",
+            aria_label = "Explain scatter plot"
+          ),
+          popover(
+            title = "Add a color variable", placement = "top",
             fa_i("ellipsis"),
             radioButtons(
               "scatter_color",
@@ -93,11 +97,18 @@ ui <- page_sidebar(
       plotlyOutput("scatterplot")
     ),
     card(
-      card_header(class = "d-flex justify-content-between align-items-center",
+      card_header(
+        class = "d-flex justify-content-between align-items-center",
         "Tip percentages",
         span(
-          actionLink("interpret_ridge", fa_i("robot"), class = "me-3"),
-          popover(title = "Split ridgeplot", placement = "top",
+          actionLink(
+            "interpret_ridge",
+            icon_explain,
+            class = "me-3 text-decoration-none",
+            aria_label = "Explain ridgeplot"
+          ),
+          popover(
+            title = "Split ridgeplot", placement = "top",
             fa_i("ellipsis"),
             radioButtons(
               "tip_perc_y",
@@ -115,8 +126,6 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output, session) {
-
-
   # 🔄 Reactive state/computation --------------------------------------------
 
   current_title <- reactiveVal(NULL)
@@ -159,12 +168,12 @@ server <- function(input, output, session) {
 
   output$average_tip <- renderText({
     x <- mean(tips_data()$tip / tips_data()$total_bill) * 100
-    paste0(formatC(x, format="f", digits=1, big.mark=","), "%")
+    paste0(formatC(x, format = "f", digits = 1, big.mark = ","), "%")
   })
 
   output$average_bill <- renderText({
     x <- mean(tips_data()$total_bill)
-    paste0("$", formatC(x, format="f", digits=2, big.mark=","))
+    paste0("$", formatC(x, format = "f", digits = 2, big.mark = ","))
   })
 
 
@@ -191,13 +200,17 @@ server <- function(input, output, session) {
     p <- plot_ly(data, x = ~total_bill, y = ~tip, type = "scatter", mode = "markers")
 
     if (color != "none") {
-      p <- plot_ly(data, x = ~total_bill, y = ~tip, color = as.formula(paste0("~", color)),
-        type = "scatter", mode = "markers")
+      p <- plot_ly(data,
+        x = ~total_bill, y = ~tip, color = as.formula(paste0("~", color)),
+        type = "scatter", mode = "markers"
+      )
     }
 
-    p <- p |> add_lines(x = ~total_bill, y = fitted(loess(tip ~ total_bill, data = data)),
-      line = list(color = 'rgba(255, 0, 0, 0.5)'),
-      name = 'LOESS', inherit = FALSE)
+    p <- p |> add_lines(
+      x = ~total_bill, y = fitted(loess(tip ~ total_bill, data = data)),
+      line = list(color = "rgba(255, 0, 0, 0.5)"),
+      name = "LOESS", inherit = FALSE
+    )
 
     p <- p |> layout(showlegend = FALSE)
 
@@ -282,12 +295,11 @@ server <- function(input, output, session) {
         conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
         on.exit(dbDisconnect(conn))
 
-        ctx = list(conn = conn)
+        ctx <- list(conn = conn)
 
         query(msgs, .ctx = ctx)
       }
     ) |>
-
       then(\(completion) {
         response_msg <- completion$choices[[1]]$message
         # print(response_msg)
@@ -313,9 +325,7 @@ server <- function(input, output, session) {
             content = msg_parsed$response
           ))
         }
-
       }) |>
-
       catch(\(err) {
         err_msg <- list(
           role = "assistant",
@@ -326,7 +336,6 @@ server <- function(input, output, session) {
         chat_append_message("chat", err_msg)
         stop(err)
       }) |>
-
       finally(\() {
         prog$close()
       })
