@@ -42,9 +42,13 @@ ui <- page_sidebar(
     style = "height: 100%;",
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
+  
+  # 🏷️ Header
   textOutput("show_title", container = h3),
   verbatimTextOutput("show_query") |>
     tagAppendAttributes(style = "max-height: 100px; overflow: auto;"),
+
+  # 🎯 Value boxes
   layout_columns(
     fill = FALSE,
     value_box(
@@ -63,14 +67,19 @@ ui <- page_sidebar(
       textOutput("average_bill", inline = TRUE)
     ),
   ),
+
   layout_columns(
     style = "min-height: 450px;",
     col_widths = c(6, 6, 12),
+
+    # 🔍 Data table
     card(
       style = "height: 500px;",
       card_header("Tips data"),
       reactableOutput("table", height = "100%")
     ),
+
+    # 📊 Scatter plot
     card(
       card_header(
         class = "d-flex justify-content-between align-items-center",
@@ -96,6 +105,8 @@ ui <- page_sidebar(
       ),
       plotlyOutput("scatterplot")
     ),
+
+    # 📊 Ridge plot
     card(
       card_header(
         class = "d-flex justify-content-between align-items-center",
