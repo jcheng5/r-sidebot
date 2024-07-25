@@ -67,19 +67,21 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
       conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
       on.exit(dbDisconnect(conn))
 
-      ctx = list(conn = conn)
+      # update_dashboard is a no-op
+      ctx = list(conn = conn, update_dashboard = \(query, title) {})
 
       query(msgs, .ctx = ctx)
     }
   ) |>
 
-    then(\(completion) {
-      response_md <- jsonlite::fromJSON(completion$choices[[1]]$message$content)$response
+    then(\(result) {
+      completion <- result$completion
+      response_md <- completion$choices[[1]]$message$content
       showModal(modalDialog(
         tags$button(
           type="button",
           class="btn-close d-block ms-auto mb-3",
-          data_bs_dismiss="modal",
+          `data-bs-dismiss`="modal",
           aria_label="Close",
         ),
         tags$img(

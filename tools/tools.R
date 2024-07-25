@@ -12,3 +12,11 @@ query <- function(query, .ctx) {
   df <- dbGetQuery(.ctx$conn, query)
   df |> toJSON()
 }
+
+update_dashboard <- function(query, title, .ctx) {
+  .ctx$update_dashboard(query = query, title = title)
+}
+
+reset_dashboard <- function(.ctx) {
+  .ctx$update_dashboard(query = "", title = "")
+}

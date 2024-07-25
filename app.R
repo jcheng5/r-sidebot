@@ -306,36 +306,44 @@ server <- function(input, output, session) {
         conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
         on.exit(dbDisconnect(conn))
 
-        ctx <- list(conn = conn)
+        result_query <- NULL
+        result_title <- NULL
 
-        query(msgs, .ctx = ctx)
+        update_dashboard <- function(query, title) {
+          result_query <<- query
+          result_title <<- title
+        }
+
+        ctx <- list(conn = conn, update_dashboard = update_dashboard)
+
+        c(
+          query(msgs, .ctx = ctx),
+          query = result_query,
+          title = result_title
+        )
       }
     ) |>
-      then(\(completion) {
+      then(\(result) {
+        for (imsg in result$intermediate_messages) {
+          messages$add(imsg)
+        }
+
+        if (!is.null(result$query)) {
+          current_query(result$query)
+        }
+        if (!is.null(result$title)) {
+          current_title(result$title)
+        }
+
+        completion <- result$completion
+
         response_msg <- completion$choices[[1]]$message
         # print(response_msg)
-
-        # We have a response! It's in JSON.
-        msg_parsed <- jsonlite::fromJSON(response_msg$content, simplifyDataFrame = FALSE)
 
         # Add response to the chat history
         messages$add(response_msg)
 
-        if ("sql" %in% names(msg_parsed)) {
-          current_query(msg_parsed$sql)
-        }
-
-        if ("title" %in% names(msg_parsed)) {
-          current_title(msg_parsed$title)
-        }
-
-        if ("response" %in% names(msg_parsed)) {
-          # Show response in the UI
-          chat_append_message("chat", list(
-            role = "assistant",
-            content = msg_parsed$response
-          ))
-        }
+        chat_append_message("chat", response_msg)
       }) |>
       catch(\(err) {
         err_msg <- list(

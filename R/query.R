@@ -21,7 +21,7 @@ system_prompt <- function(df, name, categorical_threshold = 10) {
   prompt_text <- paste(prompt_content, collapse = "\n")
 
   # Replace the placeholder with the schema
-  prompt_text <- gsub("\\$\\{SCHEMA\\}", schema, prompt_text, fixed = TRUE)
+  prompt_text <- gsub("\\$\\{SCHEMA\\}", schema, prompt_text)
 
   # Return as a named list (equivalent to Python dict)
   return(list(role = "system", content = prompt_text))
@@ -66,21 +66,25 @@ df_to_schema <- function(df, name, categorical_threshold) {
 query <- function(messages, model = "gpt-4o-mini", ..., .ctx = NULL) {
   # TODO: verify it's a good response
 
+  # Stores messages exchanged between the user input and assistant's
+  # final response (i.e., tool calls)
+  intermediate_messages <- list()
+
   while (TRUE) {
     # print(tail(messages, 1))
     completion <- client$chat$completions$create(
       model = model,
-      messages = messages,
+      messages = c(messages, intermediate_messages),
       temperature = 0.7,
-      response_format = list(type = "json_object"),
       tools = tool_infos
     )
 
     msg <- completion$choices[[1]]$message
+    print(msg)
     if (!is.null(msg$tool_calls)) {
       log("Handling tool calls")
       # TODO: optionally return the tool calls to the caller as well
-      messages <- c(messages, list(msg))
+      intermediate_messages <- c(intermediate_messages, list(msg))
       tool_response_msgs <- lapply(msg$tool_calls, \(tool_call) {
         id <- tool_call$id
         type <- tool_call$type
@@ -103,14 +107,17 @@ query <- function(messages, model = "gpt-4o-mini", ..., .ctx = NULL) {
           content = result
         )
       })
-      messages <- c(messages, tool_response_msgs)
+      intermediate_messages <- c(intermediate_messages, tool_response_msgs)
     } else {
       # TODO: We're assuming it's a response, we should double check
       break
     }
   }
   # print(completion$choices[[1]])
-  completion
+  list(
+    completion = completion,
+    intermediate_messages = intermediate_messages
+  )
 }
 
 tools_env = new.env(parent = globalenv())
