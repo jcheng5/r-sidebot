@@ -14,6 +14,9 @@ query <- function(query, .ctx) {
 }
 
 update_dashboard <- function(query, title, .ctx) {
+  # Verify that the query is OK
+  dbGetQuery(.ctx$conn, query)
+  
   .ctx$update_dashboard(query = query, title = title)
 }
 

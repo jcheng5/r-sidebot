@@ -56,6 +56,12 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
     )
   )
 
+  progress <- Progress$new()
+  progress$set(
+    message = "Examining plot...",
+    value = NULL
+  )
+
   mirai(
     msgs = c(messages, list(new_message)),
     {
@@ -73,6 +79,10 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
       query(msgs, .ctx = ctx)
     }
   ) |>
+    
+    finally(\() {
+      progress$close()
+    }) |>
 
     then(\(result) {
       completion <- result$completion
@@ -98,4 +108,5 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
         footer = NULL,
       ) |> tagAppendAttributes(style = "--bs-modal-margin: 1.75rem;"))
     })
+    
 }

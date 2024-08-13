@@ -72,15 +72,16 @@ query <- function(messages, model = "gpt-4o-mini", ..., .ctx = NULL) {
 
   while (TRUE) {
     # print(tail(messages, 1))
-    completion <- client$chat$completions$create(
-      model = model,
-      messages = c(messages, intermediate_messages),
-      temperature = 0.7,
-      tools = tool_infos
+    httr2::with_verbosity(verbosity = 2,
+      completion <- client$chat$completions$create(
+        model = model,
+        messages = c(messages, intermediate_messages),
+        temperature = 0.7,
+        tools = tool_infos
+      )
     )
 
     msg <- completion$choices[[1]]$message
-    print(msg)
     if (!is.null(msg$tool_calls)) {
       log("Handling tool calls")
       # TODO: optionally return the tool calls to the caller as well
@@ -98,7 +99,15 @@ query <- function(messages, model = "gpt-4o-mini", ..., .ctx = NULL) {
         if (".ctx" %in% names(formals(func))) {
           args$.ctx <- .ctx
         }
-        result <- do.call(func, args)
+        result <- tryCatch(
+          {
+            do.call(func, args)
+          },
+          error = \(e) {
+            message(conditionMessage(e))
+            list(success = FALSE, error = "An error occurred")
+          }
+        )
 
         list(
           role = "tool",

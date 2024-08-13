@@ -13,6 +13,10 @@ library(dplyr)
 library(promises)
 library(mirai)
 
+# Allow up to 4 simultaneous chat requests. This number can go higher as it's
+# almost all just blocking on the network.
+mirai::daemons(4, output = TRUE)
+
 # Open the duckdb database
 conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
 # Close the database when the app stops
@@ -35,13 +39,14 @@ icon_explain <- tags$img(src = "stars.svg")
 ui <- page_sidebar(
   style = "background-color: rgb(248, 248, 248);",
   title = "Restaurant tipping",
-  useBusyIndicators(),
   includeCSS(here("styles.css")),
   sidebar = sidebar(
     width = 400,
     style = "height: 100%;",
+    selectInput("model", NULL, c("GPT-4o" = "gpt-4o", "GPT-4o Mini" = "gpt-4o-mini")),
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
+  useBusyIndicators(),
   
   # 🏷️ Header
   textOutput("show_title", container = h3),
@@ -297,6 +302,7 @@ server <- function(input, output, session) {
 
     mirai(
       msgs = messages$as_list(),
+      model = input$model,
       {
         library(duckdb)
         library(DBI)
@@ -317,7 +323,7 @@ server <- function(input, output, session) {
         ctx <- list(conn = conn, update_dashboard = update_dashboard)
 
         c(
-          query(msgs, .ctx = ctx),
+          query(msgs, model = model, .ctx = ctx),
           query = result_query,
           title = result_title
         )
@@ -346,6 +352,7 @@ server <- function(input, output, session) {
         chat_append_message("chat", response_msg)
       }) |>
       catch(\(err) {
+        print(err)
         err_msg <- list(
           role = "assistant",
           # TODO: Make sure error doesn't contain HTML
@@ -353,7 +360,6 @@ server <- function(input, output, session) {
         )
         messages$add(err_msg)
         chat_append_message("chat", err_msg)
-        stop(err)
       }) |>
       finally(\() {
         prog$close()
