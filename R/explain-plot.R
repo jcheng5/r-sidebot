@@ -39,7 +39,7 @@ create_data_uri <- function(filepath, content_type) {
   img_url
 }
 
-explain_plot <- function(messages, p, ..., .ctx = NULL) {
+explain_plot <- function(messages, p, model, ..., .ctx = NULL) {
   img_url <- plot_to_img_uri(p)
 
   new_message <- list(
@@ -64,6 +64,7 @@ explain_plot <- function(messages, p, ..., .ctx = NULL) {
 
   mirai(
     msgs = c(messages, list(new_message)),
+    model = model,
     {
       library(duckdb)
       library(DBI)

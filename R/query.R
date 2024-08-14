@@ -63,7 +63,7 @@ df_to_schema <- function(df, name, categorical_threshold) {
   return(paste(schema, collapse = "\n"))
 }
 
-query <- function(messages, model = "gpt-4o-mini", ..., .ctx = NULL) {
+query <- function(messages, model = "gpt-4o", ..., .ctx = NULL) {
   # TODO: verify it's a good response
 
   # Stores messages exchanged between the user input and assistant's

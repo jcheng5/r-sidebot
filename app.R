@@ -238,7 +238,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_scatter, {
-    explain_plot(messages$as_list(), scatterplot(), .ctx = ctx)
+    explain_plot(messages$as_list(), scatterplot(), input$model, .ctx = ctx)
   })
 
 
