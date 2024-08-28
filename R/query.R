@@ -1,6 +1,7 @@
 # pak::pak("irudnyts/openai@r6")
 library(openai)
 library(here)
+library(httr2)
 
 log <- function(...) {}
 log <- message
@@ -61,6 +62,108 @@ df_to_schema <- function(df, name, categorical_threshold) {
 
   schema <- c(schema, unlist(column_info))
   return(paste(schema, collapse = "\n"))
+}
+
+chat_async <- function(
+  messages,
+  model = "gpt-4o",
+  on_chunk = \(chunk) {},
+  polling_interval_secs = 0.2,
+  .ctx = NULL
+) {
+  api_endpoint <- "https://api.openai.com/v1/chat/completions"
+  api_key <- Sys.getenv("OPENAI_API_KEY")
+
+  # Build the request
+  response <- request(api_endpoint) %>%
+    req_headers(
+      "Content-Type" = "application/json",
+      "Authorization" = paste("Bearer", api_key)
+    ) %>%
+    req_body_json(list(
+      model = "gpt-4o",
+      stream = TRUE,
+      temperature = 0.7,
+      messages = messages$as_list(),
+      tools = tool_infos
+    )) %>%
+    req_perform_connection(mode = "rt", blocking = FALSE)
+
+  chunks <- list()
+
+  promises::promise(\(resolve, reject) {
+    do_next <- \() {
+      shiny:::withLogErrors({
+        while (TRUE) {
+          sse <- read_sse(response$body)
+          if (!is.null(sse)) {
+            if (identical(sse$data, "[DONE]")) {
+              break
+            }
+            chunk <- jsonlite::fromJSON(sse$data, simplifyVector = FALSE)
+            # message(sse$data)
+            on_chunk(chunk)
+            chunks <<- c(chunks, list(chunk))
+          } else {
+            if (isIncomplete(response$body)) {
+              later::later(do_next, polling_interval_secs)
+              return()
+            } else {
+              break
+            }
+          }
+        }
+
+        # We've gathered all the chunks
+        resolve(Reduce(elmer:::merge_dicts, chunks))
+      })
+    }
+    do_next()
+  }) %>% promises::then(\(completion) {
+    msg <- completion$choices[[1]]$delta
+    messages$add(msg)
+    if (!is.null(msg$tool_calls)) {
+      log("Handling tool calls")
+      # TODO: optionally return the tool calls to the caller as well
+      tool_response_msgs <- lapply(msg$tool_calls, \(tool_call) {
+        id <- tool_call$id
+        type <- tool_call$type
+        fname <- tool_call$`function`$name
+        log("Calling ", fname)
+        args <- jsonlite::parse_json(tool_call$`function`$arguments)
+        func <- tool_funcs[[fname]]
+        if (is.null(func)) {
+          stop("Called unknown tool '", fname, "'")
+        }
+        if (".ctx" %in% names(formals(func))) {
+          args$.ctx <- .ctx
+        }
+        result <- tryCatch(
+          {
+            do.call(func, args)
+          },
+          error = \(e) {
+            message(conditionMessage(e))
+            list(success = FALSE, error = "An error occurred")
+          }
+        )
+
+        list(
+          role = "tool",
+          tool_call_id = id,
+          name = fname,
+          content = jsonlite::toJSON(result, auto_unbox = TRUE)
+        )
+      })
+      for (tool_response_msg in tool_response_msgs) {
+        messages$add(tool_response_msg)
+      }
+
+      chat_async(messages, model=model, on_chunk=on_chunk, polling_interval_secs=polling_interval_secs, .ctx=.ctx)
+    } else {
+      invisible()
+    }
+  })
 }
 
 query <- function(messages, model = "gpt-4o", ..., .ctx = NULL) {

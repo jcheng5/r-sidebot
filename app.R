@@ -47,7 +47,7 @@ ui <- page_sidebar(
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
   useBusyIndicators(),
-  
+
   # 🏷️ Header
   textOutput("show_title", container = h3),
   verbatimTextOutput("show_query") |>
@@ -297,60 +297,31 @@ server <- function(input, output, session) {
       list(role = "user", content = input$chat_user_input)
     )
 
-    prog <- Progress$new()
-    prog$set(value = NULL, message = "Thinking...")
-
-    mirai(
-      msgs = messages$as_list(),
-      model = input$model,
-      {
-        library(duckdb)
-        library(DBI)
-        library(here)
-        source(here("R/query.R"), local = TRUE)
-
-        conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
-        on.exit(dbDisconnect(conn))
-
-        result_query <- NULL
-        result_title <- NULL
-
-        update_dashboard <- function(query, title) {
-          result_query <<- query
-          result_title <<- title
-        }
-
-        ctx <- list(conn = conn, update_dashboard = update_dashboard)
-
-        c(
-          query(msgs, model = model, .ctx = ctx),
-          query = result_query,
-          title = result_title
-        )
+    content_accum <- ""
+    on_chunk <- function(chunk) {
+      if (!is.null(chunk$choices[[1]]$delta$content)) {
+        content_accum <<- paste0(content_accum, chunk$choices[[1]]$delta$content)
+        chat_append_message("chat", list(role = "assistant", content = content_accum), chunk = TRUE, session = session)
       }
-    ) |>
-      then(\(result) {
-        for (imsg in result$intermediate_messages) {
-          messages$add(imsg)
-        }
+    }
 
-        if (!is.null(result$query)) {
-          current_query(result$query)
-        }
-        if (!is.null(result$title)) {
-          current_title(result$title)
-        }
+    update_dashboard <- function(query, title) {
+      if (!is.null(query)) {
+        current_query(query)
+      }
+      if (!is.null(title)) {
+        current_title(title)
+      }
+    }
 
-        completion <- result$completion
+    chat_append_message("chat", list(role = "assistant", content = ""), chunk = "start")
 
-        response_msg <- completion$choices[[1]]$message
-        # print(response_msg)
+    chat_async(
+      messages,
+      model = "gpt-4o",
+      on_chunk = on_chunk,
+      .ctx = list(conn = conn, update_dashboard = update_dashboard)) |>
 
-        # Add response to the chat history
-        messages$add(response_msg)
-
-        chat_append_message("chat", response_msg)
-      }) |>
       catch(\(err) {
         print(err)
         err_msg <- list(
@@ -362,7 +333,7 @@ server <- function(input, output, session) {
         chat_append_message("chat", err_msg)
       }) |>
       finally(\() {
-        prog$close()
+        chat_append_message("chat", list(role = "assistant", content = content_accum), chunk = "end")
       })
   })
 }

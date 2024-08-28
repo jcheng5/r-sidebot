@@ -43,6 +43,8 @@ chat_append_message <- function(id, msg, chunk = FALSE, session = getDefaultReac
       chunk_type <- "message_start"
     } else if (chunk == "end") {
       chunk_type <- "message_end"
+    } else if (isTRUE(chunk)) {
+      chunk_type <- NULL
     } else {
       stop("Invalid chunk argument")
     }
