@@ -95,7 +95,7 @@ chat_async <- function(
     do_next <- \() {
       shiny:::withLogErrors({
         while (TRUE) {
-          sse <- read_sse(response$body)
+          sse <- resp_stream_sse(response)
           if (!is.null(sse)) {
             if (identical(sse$data, "[DONE]")) {
               break
