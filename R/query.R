@@ -109,7 +109,7 @@ chat_async <- function(
               later::later(do_next, polling_interval_secs)
               return()
             } else {
-              break
+              reject(simpleError("Chat response terminated unexpectedly (connection dropped?)"))
             }
           }
         }
@@ -159,8 +159,12 @@ chat_async <- function(
         messages$add(tool_response_msg)
       }
 
+      # Now that the tools have been invoked, continue the conversation
       chat_async(messages, model=model, on_chunk=on_chunk, polling_interval_secs=polling_interval_secs, .ctx=.ctx)
     } else {
+      # The conversation is over for now; the `messages` queue has been
+      # populated with the new messages and callbacks have been invoked with the
+      # chunks.
       invisible()
     }
   })
