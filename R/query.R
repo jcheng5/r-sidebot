@@ -1,5 +1,3 @@
-# pak::pak("irudnyts/openai@r6")
-library(openai)
 library(here)
 library(httr2)
 
@@ -10,8 +8,6 @@ api_key <- Sys.getenv("OPENAI_API_KEY", "")
 if (!nzchar(api_key)) {
   stop("OPENAI_API_KEY environment variable is required")
 }
-
-client <- OpenAI()
 
 system_prompt <- function(df, name, categorical_threshold = 10) {
   schema <- df_to_schema(df, name, categorical_threshold)
@@ -64,30 +60,25 @@ df_to_schema <- function(df, name, categorical_threshold) {
   return(paste(schema, collapse = "\n"))
 }
 
-chat_async <- function(
-  messages,
-  model = "gpt-4o",
+# Run a single streaming query to OpenAI, asynchronously. Streaming chunks are
+# reported to the on_chunk callback, and the returned promise is resolved to the
+# final completion object.
+chat_once_async <- function(
+  body,
   on_chunk = \(chunk) {},
   polling_interval_secs = 0.2,
-  .ctx = NULL
+  .ctx = NULL,
+  api_endpoint = "https://api.openai.com/v1/chat/completions",
+  api_key = Sys.getenv("OPENAI_API_KEY")
 ) {
-  api_endpoint <- "https://api.openai.com/v1/chat/completions"
-  api_key <- Sys.getenv("OPENAI_API_KEY")
-
   # Build the request
   response <- request(api_endpoint) %>%
     req_headers(
       "Content-Type" = "application/json",
       "Authorization" = paste("Bearer", api_key)
     ) %>%
-    req_body_json(list(
-      model = "gpt-4o",
-      stream = TRUE,
-      temperature = 0.7,
-      messages = messages$as_list(),
-      tools = tool_infos
-    )) %>%
-    req_perform_connection(mode = "rt", blocking = FALSE)
+    req_body_json(body) %>%
+    req_perform_connection(mode = "text", blocking = FALSE)
 
   chunks <- list()
 
@@ -114,125 +105,105 @@ chat_async <- function(
           }
         }
 
+        combined <- Reduce(elmer:::merge_dicts, chunks)
+        combined$choices <- lapply(combined$choices, \(choice) {
+          if ("delta" %in% names(choice)) {
+            names(choice)[names(choice) == "delta"] <- "message"
+          }
+          choice
+        })
+
         # We've gathered all the chunks
-        resolve(Reduce(elmer:::merge_dicts, chunks))
+        resolve(combined)
       })
     }
     do_next()
-  }) %>% promises::then(\(completion) {
-    msg <- completion$choices[[1]]$delta
-    messages$add(msg)
-    if (!is.null(msg$tool_calls)) {
-      log("Handling tool calls")
-      # TODO: optionally return the tool calls to the caller as well
-      tool_response_msgs <- lapply(msg$tool_calls, \(tool_call) {
-        id <- tool_call$id
-        type <- tool_call$type
-        fname <- tool_call$`function`$name
-        log("Calling ", fname)
-        args <- jsonlite::parse_json(tool_call$`function`$arguments)
-        func <- tool_funcs[[fname]]
-        if (is.null(func)) {
-          stop("Called unknown tool '", fname, "'")
-        }
-        if (".ctx" %in% names(formals(func))) {
-          args$.ctx <- .ctx
-        }
-        result <- tryCatch(
-          {
-            do.call(func, args)
-          },
-          error = \(e) {
-            message(conditionMessage(e))
-            list(success = FALSE, error = "An error occurred")
-          }
-        )
+  })
+}
 
-        list(
-          role = "tool",
-          tool_call_id = id,
-          name = fname,
-          content = jsonlite::toJSON(result, auto_unbox = TRUE)
-        )
-      })
-      for (tool_response_msg in tool_response_msgs) {
+chat_async <- function(
+  messages,
+  model = "gpt-4o",
+  on_chunk = \(chunk) {},
+  polling_interval_secs = 0.2,
+  .ctx = NULL,
+  api_endpoint = "https://api.openai.com/v1/chat/completions",
+  api_key = Sys.getenv("OPENAI_API_KEY")
+) {
+  chat_once_async(
+    body = list(
+      model = "gpt-4o",
+      stream = TRUE,
+      temperature = 0.7,
+      messages = messages$as_list(),
+      tools = tool_infos
+    ),
+    on_chunk = on_chunk,
+    polling_interval_secs = polling_interval_secs,
+    .ctx = .ctx,
+    api_endpoint = api_endpoint,
+    api_key = api_key
+  ) %>% promises::then(\(completion) {
+    msg <- completion$choices[[1]]$message
+    finish_reason <- completion$choices[[1]][["finish_reason"]]
+    messages$add(msg)
+    if (finish_reason == "tool_calls") {
+      log("Handling tool calls")
+      for (tool_call in msg$tool_calls) {
+        tool_response_msg <- call_tool(tool_call, .ctx)
         messages$add(tool_response_msg)
       }
 
       # Now that the tools have been invoked, continue the conversation
-      chat_async(messages, model=model, on_chunk=on_chunk, polling_interval_secs=polling_interval_secs, .ctx=.ctx)
-    } else {
+      return(chat_async(
+        messages,
+        model = model,
+        on_chunk = on_chunk,
+        polling_interval_secs = polling_interval_secs,
+        .ctx = .ctx,
+        api_endpoint = api_endpoint,
+        api_key = api_key
+      ))
+    } else if (finish_reason %in% c("stop", "limit")) {
       # The conversation is over for now; the `messages` queue has been
       # populated with the new messages and callbacks have been invoked with the
       # chunks.
-      invisible()
+      return(invisible())
+    } else if (finish_reason == "length") {
+      stop("Conversation reached its length limit")
     }
   })
 }
 
-query <- function(messages, model = "gpt-4o", ..., .ctx = NULL) {
-  # TODO: verify it's a good response
+call_tool <- function(tool_call, .ctx) {
+  fname <- tool_call$`function`$name
+  args <- jsonlite::parse_json(tool_call$`function`$arguments)
 
-  # Stores messages exchanged between the user input and assistant's
-  # final response (i.e., tool calls)
-  intermediate_messages <- list()
-
-  while (TRUE) {
-    # print(tail(messages, 1))
-    httr2::with_verbosity(verbosity = 2,
-      completion <- client$chat$completions$create(
-        model = model,
-        messages = c(messages, intermediate_messages),
-        temperature = 0.7,
-        tools = tool_infos
-      )
-    )
-
-    msg <- completion$choices[[1]]$message
-    if (!is.null(msg$tool_calls)) {
-      log("Handling tool calls")
-      # TODO: optionally return the tool calls to the caller as well
-      intermediate_messages <- c(intermediate_messages, list(msg))
-      tool_response_msgs <- lapply(msg$tool_calls, \(tool_call) {
-        id <- tool_call$id
-        type <- tool_call$type
-        fname <- tool_call$`function`$name
-        log("Calling ", fname)
-        args <- jsonlite::parse_json(tool_call$`function`$arguments)
-        func <- tool_funcs[[fname]]
-        if (is.null(func)) {
-          stop("Called unknown tool '", fname, "'")
-        }
-        if (".ctx" %in% names(formals(func))) {
-          args$.ctx <- .ctx
-        }
-        result <- tryCatch(
-          {
-            do.call(func, args)
-          },
-          error = \(e) {
-            message(conditionMessage(e))
-            list(success = FALSE, error = "An error occurred")
-          }
-        )
-
-        list(
-          role = "tool",
-          tool_call_id = id,
-          name = fname,
-          content = result
-        )
-      })
-      intermediate_messages <- c(intermediate_messages, tool_response_msgs)
-    } else {
-      # TODO: We're assuming it's a response, we should double check
-      break
-    }
+  func <- tool_funcs[[fname]]
+  if (is.null(func)) {
+    stop("Called unknown tool '", fname, "'")
   }
-  # print(completion$choices[[1]])
+  if (".ctx" %in% names(formals(func))) {
+    args$.ctx <- .ctx
+  }
+  result <- tryCatch(
+    {
+      do.call(func, args)
+    },
+    error = \(e) {
+      message(conditionMessage(e))
+      list(
+        success = FALSE,
+        error = paste0("An error occurred: ", conditionMessage(e))
+      )
+    }
+  )
+
   list(
-    completion = completion,
-    intermediate_messages = intermediate_messages
+    role = "tool",
+    tool_call_id = tool_call$id,
+    name = fname,
+    content = jsonlite::toJSON(result, auto_unbox = TRUE)
   )
 }
 

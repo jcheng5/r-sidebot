@@ -4,13 +4,13 @@ This is a demonstration of using an LLM to enhance a data dashboard written in [
 
 [**Live demo**](https://jcheng.shinyapps.io/sidebot) (Python version)
 
-To run locally, you'll need to create an `.env` file in the repo root with `OPENAI_API_KEY=` followed by a valid OpenAI API key. Or if that environment value is set some other way, you can skip the .env file.
+To run locally, you'll need to create an `.Renviron` file in the repo root with `OPENAI_API_KEY=` followed by a valid OpenAI API key. Or if that environment value is set some other way, you can skip the `.Renviron` file.
 
 Then run:
 
 ```r
 pak::pak(c("base64enc", "bslib", "DBI", "dplyr", "duckdb", "fastmap", 
-  "fontawesome", "ggplot2", "ggridges", "here", "mirai", "irudnyts/openai@r6", 
+  "fontawesome", "ggplot2", "ggridges", "here", "mirai", "r-lib/httr2@main", 
   "plotly", "promises", "reactable", "shiny"))
 ```
 
