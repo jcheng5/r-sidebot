@@ -32,7 +32,7 @@ chat_ui <- function(
   ))
 }
 
-chat_append_message <- function(id, msg, chunk = FALSE, session = getDefaultReactiveDomain()) {
+chat_append_message <- function(id, msg, chunk = FALSE, operation = NULL, session = getDefaultReactiveDomain()) {
   if (identical(msg[["role"]], "system")) {
     return()
   }
@@ -63,7 +63,8 @@ chat_append_message <- function(id, msg, chunk = FALSE, session = getDefaultReac
     content = msg[["content"]],
     role = msg[["role"]],
     content_type = content_type,
-    chunk_type = chunk_type
+    chunk_type = chunk_type,
+    operation = operation
   )
 
   session$sendCustomMessage("shinyChatMessage", list(

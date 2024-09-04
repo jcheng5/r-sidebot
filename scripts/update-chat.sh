@@ -7,6 +7,7 @@ set -e
 
 REPO_URL="https://github.com/posit-dev/py-shiny.git"
 DIRECTORY="shiny/www/py-shiny/chat"
+BRANCH=chat-append-incremental
 
 if [ ! -f "r-sidebot.Rproj" ]; then
   echo "Error: You must execute this script from the repo root (./scripts/update-chat.sh)."
@@ -14,7 +15,7 @@ if [ ! -f "r-sidebot.Rproj" ]; then
 fi
 
 # Clone the repository with sparse-checkout enabled
-git clone --depth 1 "$REPO_URL" repo_tmp
+git clone -b "$BRANCH" --depth 1 "$REPO_URL" repo_tmp
 
 # Conservatively delete the existing
 rm -f chat/GIT_VERSION chat/chat.css chat/chat.css.map chat/chat.js chat/chat.js

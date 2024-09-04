@@ -297,11 +297,18 @@ server <- function(input, output, session) {
       list(role = "user", content = input$chat_user_input)
     )
 
-    content_accum <- ""
     on_chunk <- function(chunk) {
       if (!is.null(chunk$choices[[1]]$delta$content)) {
-        content_accum <<- paste0(content_accum, chunk$choices[[1]]$delta$content)
-        chat_append_message("chat", list(role = "assistant", content = content_accum), chunk = TRUE, session = session)
+        chat_append_message(
+          "chat",
+          list(
+            role = "assistant",
+            content = chunk$choices[[1]]$delta$content
+          ),
+          chunk = TRUE,
+          operation = "append",
+          session = session
+        )
       }
     }
 
@@ -333,7 +340,7 @@ server <- function(input, output, session) {
         chat_append_message("chat", err_msg)
       }) |>
       finally(\() {
-        chat_append_message("chat", list(role = "assistant", content = content_accum), chunk = "end")
+        chat_append_message("chat", list(role = "assistant", content = ""), operation = "append", chunk = "end")
       })
   })
 }
