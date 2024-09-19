@@ -9,10 +9,12 @@ To run locally, you'll need to create an `.Renviron` file in the repo root with 
 Then run:
 
 ```r
-pak::pak(c("base64enc", "bslib", "DBI", "dplyr", "duckdb", "fastmap", 
-  "fontawesome", "ggplot2", "ggridges", "here", "mirai", "r-lib/httr2", 
-  "plotly", "promises", "reactable", "shiny", "jcheng5/shinychat"))
+pak::pak(c("bslib", "DBI", "dplyr", "duckdb", "fastmap", "fontawesome",
+  "ggplot2", "ggridges", "here", "plotly", "reactable", "shiny",
+  "hadley/elmer", "jcheng5/shinychat"))
 ```
+
+(Note that [{elmer}](https://github.com/hadley/elmer) and [{shinychat}](https://github.com/jcheng5/shinychat) are highly experimental and their APIs may change.)
 
 ## Warnings and limitations
 
