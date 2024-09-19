@@ -10,12 +10,7 @@ library(plotly)
 library(ggplot2)
 library(ggridges)
 library(dplyr)
-library(promises)
-library(mirai)
-
-# Allow up to 4 simultaneous chat requests. This number can go higher as it's
-# almost all just blocking on the network.
-mirai::daemons(4, output = TRUE)
+library(shinychat)
 
 # Open the duckdb database
 conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
@@ -26,9 +21,7 @@ onStop(\() dbDisconnect(conn))
 # large database, you wouldn't want to retrieve all the data like this, but
 # instead either hand-write the schema or write your own routine that is more
 # efficient than system_prompt().
-#
-# This value has the shape list(role = "system", content = "<SYSTEM_PROMPT>")
-system_prompt_msg <- system_prompt(dbGetQuery(conn, "SELECT * FROM tips"), "tips")
+system_prompt_str <- system_prompt(dbGetQuery(conn, "SELECT * FROM tips"), "tips")
 
 # This is the greeting that should initially appear in the sidebar when the app
 # loads.
@@ -238,7 +231,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_scatter, {
-    explain_plot(messages$as_list(), scatterplot(), input$model, .ctx = ctx)
+    explain_plot(chat, scatterplot(), input$model, .ctx = ctx)
   })
 
 
@@ -263,24 +256,59 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_ridge, {
-    explain_plot(messages$as_list(), tip_perc(), .ctx = ctx)
+    explain_plot(chat, tip_perc(), .ctx = ctx)
   })
 
 
 
   # ✨ Sidebot ✨ -------------------------------------------------------------
 
-  # The entire chat history up to this point, from the assistant's point of view
-  # (not the user). We'll add new messages whenever the user asks a new question
-  # or the chat model returns a new response.
-  #
-  # (We could've just used a list here, but fastqueue has a nicer looking API
-  # for adding new elements.)
-  messages <- fastqueue()
+  update_dashboard <- function(query, title) {
+    if (!is.null(query)) {
+      current_query(query)
+    }
+    if (!is.null(title)) {
+      current_title(title)
+    }
+  }
+
+  query <- function(query) {
+    df <- dbGetQuery(conn, query)
+    df |> jsonlite::toJSON(auto_unbox = TRUE)
+  }
 
   # Preload the conversation with the system prompt. These are instructions for
   # the chat model, and must not be shown to the end user.
-  messages$add(system_prompt_msg)
+  chat <- elmer::new_chat_openai(system_prompt = system_prompt_str)
+  chat$register_tool(
+    update_dashboard,
+    name = "update_dashboard",
+    description = "Modifies the data presented in the data dashboard, based on the given SQL query, and also updates the title.",
+    arguments = list(
+      query = list(
+        type = "string",
+        description = "A DuckDB SQL query; must be a SELECT statement.",
+        required = TRUE
+      ),
+      title = list(
+        type = "string",
+        description = "A title to display at the top of the data dashboard, summarizing the intent of the SQL query.",
+        required = TRUE
+      )
+    )
+  )
+  chat$register_tool(
+    query,
+    name = "query",
+    description = "Perform a SQL query on the data, and return the results as JSON.",
+    arguments = list(
+      query = list(
+        type = "string",
+        description = "A DuckDB SQL query; must be a SELECT statement.",
+        required = TRUE
+      )
+    )
+  )
 
   # Prepopulate the chat UI with a welcome message that appears to be from the
   # chat model (but is actually hard-coded). This is just for the user, not for
@@ -293,55 +321,7 @@ server <- function(input, output, session) {
   # Handle user input
   observeEvent(input$chat_user_input, {
     # Add user message to the chat history
-    messages$add(
-      list(role = "user", content = input$chat_user_input)
-    )
-
-    on_chunk <- function(chunk) {
-      if (!is.null(chunk$choices[[1]]$delta$content)) {
-        chat_append_message(
-          "chat",
-          list(
-            role = "assistant",
-            content = chunk$choices[[1]]$delta$content
-          ),
-          chunk = TRUE,
-          operation = "append",
-          session = session
-        )
-      }
-    }
-
-    update_dashboard <- function(query, title) {
-      if (!is.null(query)) {
-        current_query(query)
-      }
-      if (!is.null(title)) {
-        current_title(title)
-      }
-    }
-
-    chat_append_message("chat", list(role = "assistant", content = ""), chunk = "start")
-
-    chat_async(
-      messages,
-      model = "gpt-4o",
-      on_chunk = on_chunk,
-      .ctx = list(conn = conn, update_dashboard = update_dashboard)) |>
-
-      catch(\(err) {
-        print(err)
-        err_msg <- list(
-          role = "assistant",
-          # TODO: Make sure error doesn't contain HTML
-          content = paste0("**Error:** ", conditionMessage(err))
-        )
-        messages$add(err_msg)
-        chat_append_message("chat", err_msg)
-      }) |>
-      finally(\() {
-        chat_append_message("chat", list(role = "assistant", content = ""), operation = "append", chunk = "end")
-      })
+    chat_append("chat", chat$stream_async(input$chat_user_input))
   })
 }
 

@@ -10,8 +10,8 @@ Then run:
 
 ```r
 pak::pak(c("base64enc", "bslib", "DBI", "dplyr", "duckdb", "fastmap", 
-  "fontawesome", "ggplot2", "ggridges", "here", "mirai", "r-lib/httr2@main", 
-  "plotly", "promises", "reactable", "shiny"))
+  "fontawesome", "ggplot2", "ggridges", "here", "mirai", "r-lib/httr2", 
+  "plotly", "promises", "reactable", "shiny", "jcheng5/shinychat"))
 ```
 
 ## Warnings and limitations
