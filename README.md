@@ -20,8 +20,6 @@ pak::pak(c("bslib", "DBI", "dplyr", "duckdb", "fastmap", "fontawesome",
 
 This app sends at least your data schema to a remote LLM. As written, it also permits the LLM to run SQL queries against your data and get the results back. Please keep these facts in mind when dealing with sensitive data.
 
-This app currently has a slightly more limited chat experience than the equivalent Python version (see below). I hope to bring these experiences to parity as the LLM client packages in R mature 
-
 ## Other versions
 
 You can find the Python version of this app (including live demo) at [https://github.com/jcheng5/py-sidebot](https://github.com/jcheng5/py-sidebot).
