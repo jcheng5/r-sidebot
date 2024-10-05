@@ -15,8 +15,8 @@ plot_to_img_content.plotly <- function(p) {
   on.exit(unlink(tmp))
 
   # Save the plot as an image
-  save_image(p, tmp, width = 800, height = 600)
-  elmer::content_image_file(tmp, resize = "high")
+  save_image(p, tmp, width = 512, height = 386)
+  elmer::content_image_file(tmp, resize = "low")
 }
 
 plot_to_img_content.ggplot <- function(p) {
@@ -24,8 +24,8 @@ plot_to_img_content.ggplot <- function(p) {
   tmp <- tempfile(fileext = ".png")
   on.exit(unlink(tmp))
 
-  ggsave(tmp, p, width = 800, height = 600, units = "px", dpi = 100)
-  elmer::content_image_file(tmp, resize = "high")
+  ggsave(tmp, p, width = 512, height = 386, units = "px", dpi = 72)
+  elmer::content_image_file(tmp, resize = "low")
 }
 
 explain_plot <- function(chat, p, model, ..., .ctx = NULL, session = getDefaultReactiveDomain()) {
@@ -33,7 +33,7 @@ explain_plot <- function(chat, p, model, ..., .ctx = NULL, session = getDefaultR
   # chat <- chat$clone()
 
   img_content <- plot_to_img_content(p)
-  img_url <- img_content$image_url$url
+  img_url <- paste("data:image/png;base64,",img_content@data)
 
   showModal(modalDialog(
     tags$button(
