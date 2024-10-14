@@ -33,7 +33,7 @@ explain_plot <- function(chat, p, model, ..., .ctx = NULL, session = getDefaultR
   # chat <- chat$clone()
 
   img_content <- plot_to_img_content(p)
-  img_url <- img_content$image_url$url
+  img_url <- paste0("data:", img_content@type, ";base64,", img_content@data)
 
   showModal(modalDialog(
     tags$button(
@@ -59,11 +59,11 @@ explain_plot <- function(chat, p, model, ..., .ctx = NULL, session = getDefaultR
       "Interpret this plot, which is based on the current state of the data (i.e. with filtering applied, if any). Try to make specific observations if you can, but be conservative in drawing firm conclusions and express uncertainty if you can't be confident.",
       img_content
     )
-    chat_append_stream(chat_id, stream)
+    chat_append(chat_id, stream)
   })
 
   observeEvent(session$input[[paste0(chat_id, "_user_input")]], {
     stream <- chat$stream_async(session$input[[paste0(chat_id, "_user_input")]])
-    chat_append_stream(chat_id, stream)
+    chat_append(chat_id, stream)
   })
 }

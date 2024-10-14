@@ -10,12 +10,16 @@ library(plotly)
 library(ggplot2)
 library(ggridges)
 library(dplyr)
+library(elmer)
 library(shinychat)
 
 # Open the duckdb database
 conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
 # Close the database when the app stops
 onStop(\() dbDisconnect(conn))
+
+# gpt-4o does much better than gpt-4o-mini, especially at interpreting plots
+openai_model <- "gpt-4o"
 
 # Dynamically create the system prompt, based on the real data. For an actually
 # large database, you wouldn't want to retrieve all the data like this, but
@@ -36,7 +40,6 @@ ui <- page_sidebar(
   sidebar = sidebar(
     width = 400,
     style = "height: 100%;",
-    selectInput("model", NULL, c("GPT-4o" = "gpt-4o", "GPT-4o Mini" = "gpt-4o-mini")),
     chat_ui("chat", height = "100%", fill = TRUE)
   ),
   useBusyIndicators(),
@@ -231,7 +234,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_scatter, {
-    explain_plot(chat, scatterplot(), input$model, .ctx = ctx)
+    explain_plot(chat, scatterplot(), model = openai_model, .ctx = ctx)
   })
 
 
@@ -256,7 +259,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_ridge, {
-    explain_plot(chat, tip_perc(), .ctx = ctx)
+    explain_plot(chat, tip_perc(), model = openai_model, .ctx = ctx)
   })
 
 
@@ -279,44 +282,41 @@ server <- function(input, output, session) {
 
   # Preload the conversation with the system prompt. These are instructions for
   # the chat model, and must not be shown to the end user.
-  chat <- elmer::new_chat_openai(system_prompt = system_prompt_str)
-  chat$register_tool(
+  chat <- chat_openai(model = openai_model, system_prompt = system_prompt_str)
+  chat$register_tool(ToolDef(
     update_dashboard,
     name = "update_dashboard",
     description = "Modifies the data presented in the data dashboard, based on the given SQL query, and also updates the title.",
     arguments = list(
-      query = list(
+      query = ToolArg(
         type = "string",
         description = "A DuckDB SQL query; must be a SELECT statement.",
         required = TRUE
       ),
-      title = list(
+      title = ToolArg(
         type = "string",
         description = "A title to display at the top of the data dashboard, summarizing the intent of the SQL query.",
         required = TRUE
       )
     )
-  )
-  chat$register_tool(
+  ))
+  chat$register_tool(ToolDef(
     query,
     name = "query",
     description = "Perform a SQL query on the data, and return the results as JSON.",
     arguments = list(
-      query = list(
+      query = ToolArg(
         type = "string",
         description = "A DuckDB SQL query; must be a SELECT statement.",
         required = TRUE
       )
     )
-  )
+  ))
 
   # Prepopulate the chat UI with a welcome message that appears to be from the
   # chat model (but is actually hard-coded). This is just for the user, not for
   # the chat model to see.
-  chat_append_message("chat", list(
-    role = "assistant",
-    content = greeting
-  ))
+  chat_append("chat", greeting)
 
   # Handle user input
   observeEvent(input$chat_user_input, {
