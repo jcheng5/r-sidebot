@@ -283,33 +283,24 @@ server <- function(input, output, session) {
   # Preload the conversation with the system prompt. These are instructions for
   # the chat model, and must not be shown to the end user.
   chat <- chat_openai(model = openai_model, system_prompt = system_prompt_str)
-  chat$register_tool(ToolDef(
+  # Register dashboard update tool
+  chat$register_tool(tool(
     update_dashboard,
-    name = "update_dashboard",
-    description = "Modifies the data presented in the data dashboard, based on the given SQL query, and also updates the title.",
-    arguments = list(
-      query = ToolArg(
-        type = "string",
-        description = "A DuckDB SQL query; must be a SELECT statement.",
-        required = TRUE
-      ),
-      title = ToolArg(
-        type = "string",
-        description = "A title to display at the top of the data dashboard, summarizing the intent of the SQL query.",
-        required = TRUE
-      )
+    "Modifies the data presented in the data dashboard, based on the given SQL query, and also updates the title.",
+    query = type_string(
+      "A DuckDB SQL query; must be a SELECT statement."
+    ),
+    title = type_string(
+      "A title to display at the top of the data dashboard, summarizing the intent of the SQL query."
     )
   ))
-  chat$register_tool(ToolDef(
+
+  # Register query tool
+  chat$register_tool(tool(
     query,
-    name = "query",
-    description = "Perform a SQL query on the data, and return the results as JSON.",
-    arguments = list(
-      query = ToolArg(
-        type = "string",
-        description = "A DuckDB SQL query; must be a SELECT statement.",
-        required = TRUE
-      )
+    "Perform a SQL query on the data, and return the results as JSON.",
+    query = type_string(
+      "A DuckDB SQL query; must be a SELECT statement."
     )
   ))
 
