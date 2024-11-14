@@ -1,5 +1,6 @@
 library(shiny)
 library(bslib)
+library(promises)
 library(fastmap)
 library(duckdb)
 library(DBI)
@@ -68,7 +69,6 @@ ui <- page_sidebar(
       textOutput("average_bill", inline = TRUE)
     ),
   ),
-
   layout_columns(
     style = "min-height: 450px;",
     col_widths = c(6, 6, 12),
@@ -266,7 +266,36 @@ server <- function(input, output, session) {
 
   # ✨ Sidebot ✨ -------------------------------------------------------------
 
+  append_output <- function(...) {
+    txt <- paste0(...)
+    shinychat::chat_append_message(
+      "chat",
+      list(role = "assistant", content = txt),
+      chunk = TRUE,
+      operation = "append",
+      session = session
+    )
+  }
+
+  #' Modifies the data presented in the data dashboard, based on the given SQL
+  #' query, and also updates the title.
+  #' @param query A DuckDB SQL query; must be a SELECT statement.
+  #' @param title A title to display at the top of the data dashboard,
+  #'   summarizing the intent of the SQL query.
   update_dashboard <- function(query, title) {
+    append_output("\n```sql\n", query, "\n```\n\n")
+
+    tryCatch(
+      {
+        # Try it to see if it errors; if so, the LLM will see the error
+        dbGetQuery(conn, query)
+      },
+      error = function(err) {
+        append_output("> Error: ", conditionMessage(err), "\n\n")
+        stop(err)
+      }
+    )
+
     if (!is.null(query)) {
       current_query(query)
     }
@@ -275,8 +304,26 @@ server <- function(input, output, session) {
     }
   }
 
+  #' Perform a SQL query on the data, and return the results as JSON.
+  #' @param query A DuckDB SQL query; must be a SELECT statement.
+  #' @return The results of the query as a JSON string.
   query <- function(query) {
-    df <- dbGetQuery(conn, query)
+    # Do this before query, in case it errors
+    append_output("\n```sql\n", query, "\n```\n\n")
+
+    tryCatch(
+      {
+        df <- dbGetQuery(conn, query)
+      },
+      error = function(e) {
+        append_output("> Error: ", conditionMessage(e), "\n\n")
+        stop(e)
+      }
+    )
+
+    tbl_html <- df_to_html(df, maxrows = 5)
+    append_output(tbl_html, "\n\n")
+
     df |> jsonlite::toJSON(auto_unbox = TRUE)
   }
 
@@ -303,8 +350,28 @@ server <- function(input, output, session) {
   # Handle user input
   observeEvent(input$chat_user_input, {
     # Add user message to the chat history
-    chat_append("chat", chat$stream_async(input$chat_user_input))
+    chat_append("chat", chat$stream_async(input$chat_user_input)) %...>% {
+      # print(chat)
+    }
   })
+}
+
+df_to_html <- function(df, maxrows = 5) {
+  df_short <- if (nrow(df) > 10) head(df, maxrows) else df
+
+  tbl_html <- capture.output(
+    df_short |>
+      xtable::xtable() |>
+      print(type = "html", include.rownames = FALSE, html.table.attributes = NULL)
+  ) |> paste(collapse = "\n")
+
+  if (nrow(df_short) != nrow(df)) {
+    rows_notice <- glue::glue("\n\n(Showing only the first {maxrows} rows out of {nrow(df)}.)\n")
+  } else {
+    rows_notice <- ""
+  }
+
+  paste0(tbl_html, "\n", rows_notice)
 }
 
 shinyApp(ui, server)
