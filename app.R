@@ -1,9 +1,5 @@
 library(shiny)
 library(bslib)
-library(promises)
-library(fastmap)
-library(duckdb)
-library(DBI)
 library(fontawesome)
 library(reactable)
 library(here)
@@ -11,26 +7,17 @@ library(plotly)
 library(ggplot2)
 library(ggridges)
 library(dplyr)
-library(elmer)
-library(shinychat)
+library(querychat)
 
-# Open the duckdb database
-conn <- dbConnect(duckdb(), dbdir = here("tips.duckdb"), read_only = TRUE)
-# Close the database when the app stops
-onStop(\() dbDisconnect(conn))
+tips <- readr::read_csv(here("tips.csv")) |>
+  mutate(percent = round((tip / total_bill) * 100, 2))
 
-# gpt-4o does much better than gpt-4o-mini, especially at interpreting plots
-openai_model <- "gpt-4o"
-
-# Dynamically create the system prompt, based on the real data. For an actually
-# large database, you wouldn't want to retrieve all the data like this, but
-# instead either hand-write the schema or write your own routine that is more
-# efficient than system_prompt().
-system_prompt_str <- system_prompt(dbGetQuery(conn, "SELECT * FROM tips"), "tips")
-
-# This is the greeting that should initially appear in the sidebar when the app
-# loads.
-greeting <- paste(readLines(here("greeting.md")), collapse = "\n")
+querychat_handle <- querychat_init(
+  tips,
+  # This is the greeting that should initially appear in the sidebar when the app
+  # loads.
+  greeting = readLines(here("greeting.md"), warn = FALSE)
+)
 
 icon_explain <- tags$img(src = "stars.svg")
 
@@ -38,11 +25,7 @@ ui <- page_sidebar(
   style = "background-color: rgb(248, 248, 248);",
   title = "Restaurant tipping",
   includeCSS(here("styles.css")),
-  sidebar = sidebar(
-    width = 400,
-    style = "height: 100%;",
-    chat_ui("chat", height = "100%", fill = TRUE)
-  ),
+  sidebar = querychat_sidebar("chat"),
   useBusyIndicators(),
 
   # 🏷️ Header
@@ -93,7 +76,8 @@ ui <- page_sidebar(
             aria_label = "Explain scatter plot"
           ),
           popover(
-            title = "Add a color variable", placement = "top",
+            title = "Add a color variable",
+            placement = "top",
             fa_i("ellipsis"),
             radioButtons(
               "scatter_color",
@@ -120,7 +104,8 @@ ui <- page_sidebar(
             aria_label = "Explain ridgeplot"
           ),
           popover(
-            title = "Split ridgeplot", placement = "top",
+            title = "Split ridgeplot",
+            placement = "top",
             fa_i("ellipsis"),
             radioButtons(
               "tip_perc_y",
@@ -138,39 +123,30 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output, session) {
-  # 🔄 Reactive state/computation --------------------------------------------
+  # ✨ querychat ✨ -----------------------------------------------------------
 
-  current_title <- reactiveVal(NULL)
-  current_query <- reactiveVal("")
+  querychat <- querychat_server("chat", querychat_handle)
 
-  # This object must always be passed as the `.ctx` argument to query(), so that
-  # tool functions can access the context they need to do their jobs; in this
-  # case, the database connection that query() needs.
-  ctx <- list(conn = conn)
+  # We don't normally need the chat object, but in this case, we want it so we
+  # can pass it to explain_plot
+  chat <- querychat$chat
 
   # The reactive data frame. Either returns the entire dataset, or filtered by
-  # whatever Sidebot decided.
-  tips_data <- reactive({
-    sql <- current_query()
-    if (is.null(sql) || sql == "") {
-      sql <- "SELECT * FROM tips;"
-    }
-    dbGetQuery(conn, sql)
-  })
-
-
+  # whatever querychat decided.
+  #
+  # querychat$df is already a reactive data frame, we're just creating an alias
+  # to it called `tips_data` so the code below can be more readable.
+  tips_data <- querychat$df
 
   # 🏷️ Header outputs --------------------------------------------------------
 
   output$show_title <- renderText({
-    current_title()
+    querychat$title()
   })
 
   output$show_query <- renderText({
-    current_query()
+    querychat$sql()
   })
-
-
 
   # 🎯 Value box outputs -----------------------------------------------------
 
@@ -188,17 +164,11 @@ server <- function(input, output, session) {
     paste0("$", formatC(x, format = "f", digits = 2, big.mark = ","))
   })
 
-
-
   # 🔍 Data table ------------------------------------------------------------
 
   output$table <- renderReactable({
-    reactable(tips_data(),
-      pagination = FALSE, compact = TRUE
-    )
+    reactable(tips_data(), pagination = FALSE, compact = TRUE)
   })
-
-
 
   # 📊 Scatter plot ----------------------------------------------------------
 
@@ -209,20 +179,33 @@ server <- function(input, output, session) {
 
     data <- tips_data()
 
-    p <- plot_ly(data, x = ~total_bill, y = ~tip, type = "scatter", mode = "markers")
+    p <- plot_ly(
+      data,
+      x = ~total_bill,
+      y = ~tip,
+      type = "scatter",
+      mode = "markers"
+    )
 
     if (color != "none") {
-      p <- plot_ly(data,
-        x = ~total_bill, y = ~tip, color = as.formula(paste0("~", color)),
-        type = "scatter", mode = "markers"
+      p <- plot_ly(
+        data,
+        x = ~total_bill,
+        y = ~tip,
+        color = as.formula(paste0("~", color)),
+        type = "scatter",
+        mode = "markers"
       )
     }
 
-    p <- p |> add_lines(
-      x = ~total_bill, y = fitted(loess(tip ~ total_bill, data = data)),
-      line = list(color = "rgba(255, 0, 0, 0.5)"),
-      name = "LOESS", inherit = FALSE
-    )
+    p <- p |>
+      add_lines(
+        x = ~total_bill,
+        y = fitted(loess(tip ~ total_bill, data = data)),
+        line = list(color = "rgba(255, 0, 0, 0.5)"),
+        name = "LOESS",
+        inherit = FALSE
+      )
 
     p <- p |> layout(showlegend = FALSE)
 
@@ -234,10 +217,8 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_scatter, {
-    explain_plot(chat, scatterplot(), model = openai_model, .ctx = ctx)
+    explain_plot(chat, scatterplot(), .ctx = ctx)
   })
-
-
 
   # 📊 Ridge plot ------------------------------------------------------------
 
@@ -246,7 +227,10 @@ server <- function(input, output, session) {
 
     df <- tips_data() |> mutate(percent = tip / total_bill)
 
-    ggplot(df, aes_string(x = "percent", y = input$tip_perc_y, fill = input$tip_perc_y)) +
+    ggplot(
+      df,
+      aes_string(x = "percent", y = input$tip_perc_y, fill = input$tip_perc_y)
+    ) +
       geom_density_ridges(scale = 3, rel_min_height = 0.01, alpha = 0.6) +
       scale_fill_viridis_d() +
       theme_ridges() +
@@ -259,119 +243,8 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_ridge, {
-    explain_plot(chat, tip_perc(), model = openai_model, .ctx = ctx)
+    explain_plot(chat, tip_perc(), .ctx = ctx)
   })
-
-
-
-  # ✨ Sidebot ✨ -------------------------------------------------------------
-
-  append_output <- function(...) {
-    txt <- paste0(...)
-    shinychat::chat_append_message(
-      "chat",
-      list(role = "assistant", content = txt),
-      chunk = TRUE,
-      operation = "append",
-      session = session
-    )
-  }
-
-  #' Modifies the data presented in the data dashboard, based on the given SQL
-  #' query, and also updates the title.
-  #' @param query A DuckDB SQL query; must be a SELECT statement.
-  #' @param title A title to display at the top of the data dashboard,
-  #'   summarizing the intent of the SQL query.
-  update_dashboard <- function(query, title) {
-    append_output("\n```sql\n", query, "\n```\n\n")
-
-    tryCatch(
-      {
-        # Try it to see if it errors; if so, the LLM will see the error
-        dbGetQuery(conn, query)
-      },
-      error = function(err) {
-        append_output("> Error: ", conditionMessage(err), "\n\n")
-        stop(err)
-      }
-    )
-
-    if (!is.null(query)) {
-      current_query(query)
-    }
-    if (!is.null(title)) {
-      current_title(title)
-    }
-  }
-
-  #' Perform a SQL query on the data, and return the results as JSON.
-  #' @param query A DuckDB SQL query; must be a SELECT statement.
-  #' @return The results of the query as a JSON string.
-  query <- function(query) {
-    # Do this before query, in case it errors
-    append_output("\n```sql\n", query, "\n```\n\n")
-
-    tryCatch(
-      {
-        df <- dbGetQuery(conn, query)
-      },
-      error = function(e) {
-        append_output("> Error: ", conditionMessage(e), "\n\n")
-        stop(e)
-      }
-    )
-
-    tbl_html <- df_to_html(df, maxrows = 5)
-    append_output(tbl_html, "\n\n")
-
-    df |> jsonlite::toJSON(auto_unbox = TRUE)
-  }
-
-  # Preload the conversation with the system prompt. These are instructions for
-  # the chat model, and must not be shown to the end user.
-  chat <- chat_openai(model = openai_model, system_prompt = system_prompt_str)
-  chat$register_tool(tool(
-    update_dashboard,
-    "Modifies the data presented in the data dashboard, based on the given SQL query, and also updates the title.",
-    query = type_string("A DuckDB SQL query; must be a SELECT statement."),
-    title = type_string("A title to display at the top of the data dashboard, summarizing the intent of the SQL query.")
-  ))
-  chat$register_tool(tool(
-    query,
-    "Perform a SQL query on the data, and return the results as JSON.",
-    query = type_string("A DuckDB SQL query; must be a SELECT statement.")
-  ))
-
-  # Prepopulate the chat UI with a welcome message that appears to be from the
-  # chat model (but is actually hard-coded). This is just for the user, not for
-  # the chat model to see.
-  chat_append("chat", greeting)
-
-  # Handle user input
-  observeEvent(input$chat_user_input, {
-    # Add user message to the chat history
-    chat_append("chat", chat$stream_async(input$chat_user_input)) %...>% {
-      # print(chat)
-    }
-  })
-}
-
-df_to_html <- function(df, maxrows = 5) {
-  df_short <- if (nrow(df) > 10) head(df, maxrows) else df
-
-  tbl_html <- capture.output(
-    df_short |>
-      xtable::xtable() |>
-      print(type = "html", include.rownames = FALSE, html.table.attributes = NULL)
-  ) |> paste(collapse = "\n")
-
-  if (nrow(df_short) != nrow(df)) {
-    rows_notice <- glue::glue("\n\n(Showing only the first {maxrows} rows out of {nrow(df)}.)\n")
-  } else {
-    rows_notice <- ""
-  }
-
-  paste0(tbl_html, "\n", rows_notice)
 }
 
 shinyApp(ui, server)
