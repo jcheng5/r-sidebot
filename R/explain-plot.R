@@ -16,7 +16,7 @@ plot_to_img_content.plotly <- function(p) {
 
   # Save the plot as an image
   save_image(p, tmp, width = 800, height = 600)
-  elmer::content_image_file(tmp, resize = "high")
+  ellmer::content_image_file(tmp, resize = "high")
 }
 
 plot_to_img_content.ggplot <- function(p) {
@@ -25,12 +25,12 @@ plot_to_img_content.ggplot <- function(p) {
   on.exit(unlink(tmp))
 
   ggsave(tmp, p, width = 800, height = 600, units = "px", dpi = 100)
-  elmer::content_image_file(tmp, resize = "high")
+  ellmer::content_image_file(tmp, resize = "high")
 }
 
-explain_plot <- function(chat, p, model, ..., .ctx = NULL, session = getDefaultReactiveDomain()) {
+explain_plot <- function(chat, p, ..., .ctx = NULL, session = getDefaultReactiveDomain()) {
   chat_id <- paste0("explain_plot_", sample.int(1e9, 1))
-  # chat <- chat$clone()
+  chat <- chat$clone()
 
   img_content <- plot_to_img_content(p)
   img_url <- paste0("data:", img_content@type, ";base64,", img_content@data)

@@ -11,7 +11,7 @@ Then run:
 ```r
 pak::pak(c("bslib", "DBI", "dplyr", "duckdb", "fastmap", "fontawesome",
   "ggplot2", "ggridges", "here", "plotly", "reactable", "shiny",
-  "hadley/elmer", "jcheng5/shinychat"))
+  "ellmer", "shinychat"))
 ```
 
 (Note that [{elmer}](https://github.com/hadley/elmer) and [{shinychat}](https://github.com/jcheng5/shinychat) are highly experimental and their APIs may change.)

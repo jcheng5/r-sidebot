@@ -11,7 +11,7 @@ library(plotly)
 library(ggplot2)
 library(ggridges)
 library(dplyr)
-library(elmer)
+library(ellmer)
 library(shinychat)
 
 # Open the duckdb database
@@ -234,7 +234,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_scatter, {
-    explain_plot(chat, scatterplot(), model = openai_model, .ctx = ctx)
+    explain_plot(chat, scatterplot(), .ctx = ctx)
   })
 
 
@@ -259,7 +259,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$interpret_ridge, {
-    explain_plot(chat, tip_perc(), model = openai_model, .ctx = ctx)
+    explain_plot(chat, tip_perc(), .ctx = ctx)
   })
 
 
