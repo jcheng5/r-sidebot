@@ -10,7 +10,7 @@ Then run:
 
 ```r
 pak::pak(c("dplyr", "ggridges", "here", "plotly", "reactable",
-  "posit-dev/querychat/r-package"))
+  "posit-dev/querychat/pkg-r"))
 ```
 
 ## Warnings and limitations
